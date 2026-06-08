@@ -1,1 +1,12 @@
-# chatv2-claude
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "node server.js",
+    "healthcheckPath": "/status",
+    "healthcheckTimeout": 10,
+    "restartPolicyType": "ON_FAILURE"
+  }
+}

@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Z-API Chat</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0f1117;--bg2:#161820;--bg3:#1e2030;--bg4:#252840;
+  --border:#2a2d45;--border2:#363a5a;
+  --accent:#4ade80;--adim:rgba(74,222,128,.12);--adim2:rgba(74,222,128,.05);
+  --text:#e8eaf0;--text2:#8b90aa;--text3:#555a78;
+  --sbg:#1a3a2a;--sbr:#2d6644;--stxt:#d4f5e0;
+  --rbg:#1e2030;--rbr:#2a2d45;
+  --err:#f87171;--errbg:rgba(248,113,113,.1);
+  --warn-bg:rgba(251,191,36,.08);--warn:#fbbf24;
+  --r:10px;--rs:6px;
+  --font:'IBM Plex Sans',sans-serif;--mono:'IBM Plex Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:hidden}
+
+/* SIDEBAR */
+.sidebar{width:220px;min-width:220px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column}
+.logo{padding:20px 18px 16px;border-bottom:1px solid var(--border)}
+.logo-row{display:flex;align-items:center;gap:10px;margin-bottom:3px}
+.logo-ic{width:30px;height:30px;background:var(--adim);border:1px solid rgba(74,222,128,.3);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px}
+.logo-name{font-size:15px;font-weight:600;letter-spacing:-.01em}
+.logo-ver{font-size:10px;color:var(--text3);font-family:var(--mono);padding-left:40px}
+.conn-row{display:flex;align-items:center;gap:5px;padding-left:40px;margin-top:6px;font-size:11px;font-family:var(--mono);color:var(--text3)}
+.cdot{width:6px;height:6px;border-radius:50%;background:var(--text3);flex-shrink:0;transition:all .3s}
+.cdot.on{background:var(--accent);box-shadow:0 0 6px var(--accent)}
+.nav{padding:10px 8px 0;flex:1}
+.ni{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:var(--rs);cursor:pointer;font-size:13px;color:var(--text2);transition:all .15s;margin-bottom:2px;border:1px solid transparent}
+.ni:hover{background:var(--bg3);color:var(--text)}
+.ni.active{background:var(--adim);color:var(--accent);border-color:rgba(74,222,128,.2)}
+.nbadge{margin-left:auto;background:var(--accent);color:var(--bg);font-size:10px;font-weight:700;padding:1px 6px;border-radius:100px;display:none}
+.sfooter{padding:14px 18px;border-top:1px solid var(--border);font-size:10px;color:var(--text3);font-family:var(--mono)}
+
+/* MAIN */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.panel{display:none;flex:1;flex-direction:column;overflow:hidden}
+.panel.active{display:flex}
+
+/* CONFIG */
+.cscroll{flex:1;overflow-y:auto;padding:30px 36px}
+.cscroll::-webkit-scrollbar{width:4px}
+.cscroll::-webkit-scrollbar-thumb{background:var(--border2);border-radius:10px}
+.ptitle{font-size:20px;font-weight:600;margin-bottom:4px}
+.psub{font-size:13px;color:var(--text2);margin-bottom:28px;line-height:1.6}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:24px;max-width:580px;margin-bottom:18px}
+.card h3{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:18px}
+.fr{margin-bottom:15px}
+.fr label{display:block;font-size:12px;font-weight:500;color:var(--text2);margin-bottom:7px;letter-spacing:.02em}
+.fr input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:9px 13px;font-size:13px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color .15s}
+.fr input:focus{border-color:rgba(74,222,128,.5)}
+.fr input::placeholder{color:var(--text3)}
+.fhint{font-size:11px;color:var(--text3);margin-top:5px;font-family:var(--mono)}
+.aprev{background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:10px 13px;font-size:11px;font-family:var(--mono);color:var(--text3);word-break:break-all;margin-top:15px;line-height:1.7}
+.aprev .hl{color:var(--accent)}
+.brow{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:var(--rs);font-size:13px;font-weight:500;cursor:pointer;font-family:var(--font);transition:all .15s;border:1px solid transparent}
+.btn-g{background:var(--adim);color:var(--accent);border-color:rgba(74,222,128,.3)}
+.btn-g:hover{background:rgba(74,222,128,.2)}
+.btn-gh{background:transparent;color:var(--text2);border-color:var(--border2)}
+.btn-gh:hover{background:var(--bg3);color:var(--text)}
+.btn-r{background:var(--errbg);color:var(--err);border-color:rgba(248,113,113,.2)}
+.btn-r:hover{background:rgba(248,113,113,.15)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+.sblock{border-radius:var(--rs);padding:13px 16px;display:none;align-items:center;gap:13px;margin-bottom:16px;border:1px solid var(--border);background:var(--bg3)}
+.sblock.show{display:flex}
+.sblock.ok{border-color:rgba(74,222,128,.3);background:rgba(74,222,128,.06)}
+.sblock.err{border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.06)}
+.sinfo p{font-size:13px;font-weight:500}
+.sinfo span{font-size:11px;color:var(--text2);font-family:var(--mono)}
+.abox{padding:10px 14px;border-radius:var(--rs);font-size:12px;margin-bottom:16px;display:none;font-family:var(--mono);line-height:1.6}
+.abox.show{display:block}
+.abox.success{background:rgba(74,222,128,.1);color:var(--accent);border:1px solid rgba(74,222,128,.2)}
+.abox.error{background:var(--errbg);color:var(--err);border:1px solid rgba(248,113,113,.2)}
+.abox.info{background:rgba(99,179,237,.1);color:#63b3ed;border:1px solid rgba(99,179,237,.2)}
+
+/* webhook info box */
+.wh-box{background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:13px 16px;margin-top:14px}
+.wh-box-label{font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:6px}
+.wh-box-url{font-size:12px;font-family:var(--mono);color:var(--accent);word-break:break-all;display:flex;align-items:center;gap:8px}
+.copy-btn{font-size:10px;padding:3px 8px;background:var(--adim);color:var(--accent);border:1px solid rgba(74,222,128,.3);border-radius:4px;cursor:pointer;white-space:nowrap;transition:all .15s}
+.copy-btn:hover{background:rgba(74,222,128,.2)}
+
+/* CHAT */
+.ctop{padding:13px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:13px;background:var(--bg2);min-height:56px}
+.ctop-info{flex:1;min-width:0}
+.ctop-info h2{font-size:14px;font-weight:600}
+.ctop-info span{font-size:11px;color:var(--text2);font-family:var(--mono)}
+.pbadge{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-family:var(--mono);color:var(--text3);padding:4px 10px;border:1px solid var(--border);border-radius:100px}
+.pbadge.on{color:var(--accent);border-color:rgba(74,222,128,.3)}
+.pdot{width:5px;height:5px;border-radius:50%;background:var(--text3)}
+.pbadge.on .pdot{background:var(--accent);animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+.ncbar{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;background:var(--bg2)}
+.ncbar input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;font-size:13px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color .15s}
+.ncbar input:focus{border-color:rgba(74,222,128,.4)}
+.ncbar input::placeholder{color:var(--text3)}
+.bsm{padding:8px 14px;font-size:12px;font-weight:500;cursor:pointer;border-radius:var(--rs);font-family:var(--font);transition:all .15s;border:1px solid transparent;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
+.bsm-g{background:var(--adim);color:var(--accent);border-color:rgba(74,222,128,.3)}
+.bsm-g:hover{background:rgba(74,222,128,.2)}
+
+.cbody{flex:1;display:flex;overflow:hidden}
+.clist{width:210px;min-width:210px;border-right:1px solid var(--border);background:var(--bg2);overflow-y:auto;display:flex;flex-direction:column}
+.clist::-webkit-scrollbar{width:3px}
+.clist::-webkit-scrollbar-thumb{background:var(--border);border-radius:10px}
+.clhdr{padding:10px 14px 6px;font-size:10px;font-weight:600;letter-spacing:.1em;color:var(--text3);text-transform:uppercase;font-family:var(--mono)}
+.ci{padding:11px 14px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s;position:relative}
+.ci:hover{background:var(--bg3)}
+.ci.active{background:var(--adim2);border-left:2px solid var(--accent)}
+.ci-ph{font-size:12px;font-family:var(--mono);font-weight:500;color:var(--text);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ci.active .ci-ph{color:var(--accent)}
+.ci-prev{font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.udot{width:8px;height:8px;border-radius:50%;background:var(--accent);position:absolute;right:11px;top:13px;display:none}
+.udot.show{display:block;box-shadow:0 0 5px var(--accent)}
+
+.cwin{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.cempty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--text3)}
+.cempty-ic{font-size:42px;opacity:.18}
+.cwin-inner{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.cwin-hdr{padding:11px 16px;border-bottom:1px solid var(--border);background:var(--bg2);display:flex;align-items:center;gap:11px}
+.av{width:34px;height:34px;border-radius:50%;background:var(--bg4);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:12px;font-family:var(--mono);color:var(--accent);font-weight:500;flex-shrink:0}
+
+.msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:6px}
+.msgs::-webkit-scrollbar{width:3px}
+.msgs::-webkit-scrollbar-thumb{background:var(--border);border-radius:10px}
+.mg{display:flex;flex-direction:column;gap:3px}
+.mg.sent{align-items:flex-end}
+.mg.recv{align-items:flex-start}
+.mb{max-width:68%;padding:9px 13px;font-size:13px;line-height:1.55;word-break:break-word}
+.mb.sent{background:var(--sbg);border:1px solid var(--sbr);color:var(--stxt);border-radius:12px 12px 3px 12px}
+.mb.recv{background:var(--rbg);border:1px solid var(--rbr);color:var(--text);border-radius:12px 12px 12px 3px}
+.mmeta{font-size:10px;font-family:var(--mono);color:var(--text3);padding:0 2px;display:flex;align-items:center;gap:4px}
+.mmeta.sent{justify-content:flex-end}
+.mst{font-size:12px;line-height:1}
+.mst.PENDING{color:var(--text3)}
+.mst.SENT{color:var(--text2)}
+.mst.RECEIVED{color:var(--text2)}
+.mst.READ{color:#38bdf8}
+.daydiv{text-align:center;margin:12px 0 6px;font-size:10px;font-family:var(--mono);color:var(--text3);position:relative}
+.daydiv::before,.daydiv::after{content:'';position:absolute;top:50%;width:26%;height:1px;background:var(--border)}
+.daydiv::before{left:0}.daydiv::after{right:0}
+
+.iarea{padding:12px 16px;border-top:1px solid var(--border);background:var(--bg2);display:flex;gap:10px;align-items:flex-end}
+.iarea textarea{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:9px 13px;font-size:13px;color:var(--text);font-family:var(--font);resize:none;outline:none;min-height:38px;max-height:120px;line-height:1.5;transition:border-color .15s}
+.iarea textarea:focus{border-color:rgba(74,222,128,.4)}
+.iarea textarea::placeholder{color:var(--text3)}
+.sbtn{width:38px;height:38px;background:var(--adim);border:1px solid rgba(74,222,128,.3);border-radius:var(--rs);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--accent);flex-shrink:0;transition:all .15s;font-size:16px}
+.sbtn:hover{background:rgba(74,222,128,.2)}
+.sbtn:disabled{opacity:.3;cursor:not-allowed}
+.malert{margin:0 16px 8px;padding:8px 12px;background:var(--errbg);border:1px solid rgba(248,113,113,.2);color:var(--err);border-radius:var(--rs);font-size:12px;font-family:var(--mono);display:none}
+.malert.show{display:block}
+.spin{width:14px;height:14px;border:2px solid rgba(74,222,128,.2);border-top-color:var(--accent);border-radius:50%;animation:sp .6s linear infinite;display:inline-block}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-row"><div class="logo-ic">💬</div><span class="logo-name">Z-API Chat</span></div>
+    <div class="logo-ver">v1.0</div>
+    <div class="conn-row"><span class="cdot" id="cdot"></span><span id="ctxt">offline</span></div>
+  </div>
+  <nav class="nav">
+    <div class="ni active" id="nav-config" onclick="showPanel('config')">⚙️ Configuração</div>
+    <div class="ni" id="nav-chat" onclick="tryChat()">💬 Chat <span class="nbadge" id="ubadge">0</span></div>
+  </nav>
+  <div class="sfooter" id="sfooter">carregando...</div>
+</aside>
+
+<main class="main">
+
+  <!-- ═══ CONFIG ═══ -->
+  <div class="panel active" id="panel-config">
+    <div class="cscroll">
+      <h1 class="ptitle">Configuração</h1>
+      <p class="psub">Configure suas credenciais Z-API. O webhook já está ativo neste servidor.</p>
+      <div id="acfg" class="abox"></div>
+
+      <!-- CREDENCIAIS -->
+      <div class="card">
+        <h3>🔑 Credenciais Z-API</h3>
+        <div id="sblock" class="sblock">
+          <span id="sico" style="font-size:20px">✅</span>
+          <div class="sinfo"><p id="stitle">—</p><span id="ssub">—</span></div>
+        </div>
+        <div class="fr">
+          <label>ID DA INSTÂNCIA</label>
+          <input type="text" id="ii" placeholder="3F4314A5C1318235F15AFE743DE93AC5" autocomplete="off" spellcheck="false" oninput="updPrev()">
+          <p class="fhint">// painel Z-API → Instâncias → ID da instância</p>
+        </div>
+        <div class="fr">
+          <label>TOKEN DA INSTÂNCIA</label>
+          <input type="password" id="it" placeholder="B445381FB124D7582F4BB5EA" autocomplete="off" spellcheck="false" oninput="updPrev()">
+          <p class="fhint">// painel Z-API → Instâncias → Token da instância</p>
+        </div>
+        <div class="aprev">https://api.z-api.io/instances/<span class="hl" id="pi">ID</span>/token/<span class="hl" id="pt">TOKEN</span>/send-text</div>
+        <div class="brow">
+          <button class="btn btn-g" onclick="saveCfg()">💾 Salvar e verificar</button>
+          <button class="btn btn-r" id="bclr" onclick="clearCfg()" style="display:none">🗑 Limpar</button>
+        </div>
+      </div>
+
+      <!-- WEBHOOK -->
+      <div class="card">
+        <h3>📡 Webhook — URL para a Z-API</h3>
+        <p style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:14px">
+          Este servidor já está pronto para receber mensagens. Copie a URL abaixo e registre na Z-API — ou clique em <strong>Registrar automaticamente</strong>.
+        </p>
+        <div class="wh-box">
+          <div class="wh-box-label">URL do webhook (POST)</div>
+          <div class="wh-box-url">
+            <span id="wh-url-display">detectando...</span>
+            <button class="copy-btn" onclick="copyWh()">📋 Copiar</button>
+          </div>
+        </div>
+        <div class="brow" style="margin-top:16px">
+          <button class="btn btn-g" onclick="registerWebhook()" id="btn-wh">📌 Registrar automaticamente na Z-API</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══ CHAT ═══ -->
+  <div class="panel" id="panel-chat">
+    <div class="ctop">
+      <span style="font-size:18px">💬</span>
+      <div class="ctop-info">
+        <h2 id="ttitle">Nova conversa</h2>
+        <span id="tsub">Digite um número para iniciar</span>
+      </div>
+      <div class="pbadge" id="pb"><span class="pdot"></span><span id="ptxt">off</span></div>
+    </div>
+    <div class="ncbar">
+      <input type="text" id="iph" placeholder="5511999999999 (DDI+DDD+número)" maxlength="15" oninput="this.value=this.value.replace(/\D/g,'')">
+      <button class="bsm bsm-g" onclick="openChat()">✉️ Abrir</button>
+    </div>
+    <div class="cbody">
+      <div class="clist">
+        <div class="clhdr">conversas</div>
+        <div id="cli"></div>
+      </div>
+      <div class="cwin">
+        <div class="cempty" id="cempty">
+          <div class="cempty-ic">💬</div>
+          <p style="font-size:13px;color:var(--text2)">Nenhum chat aberto</p>
+          <span style="font-size:11px;font-family:var(--mono);color:var(--text3)">Digite um número acima</span>
+        </div>
+        <div class="cwin-inner" id="cwi" style="display:none">
+          <div class="cwin-hdr">
+            <div class="av" id="wav">??</div>
+            <div>
+              <p style="font-size:13px;font-weight:600" id="wph">—</p>
+              <span style="font-size:11px;font-family:var(--mono);color:var(--text3)" id="wst">—</span>
+            </div>
+          </div>
+          <div class="msgs" id="msgs"></div>
+          <div id="malert" class="malert"></div>
+          <div class="iarea">
+            <textarea id="imsg" placeholder="Mensagem… (Enter envia · Shift+Enter nova linha)" rows="1"
+              onkeydown="onKey(event)" oninput="autoH(this)"></textarea>
+            <button class="sbtn" id="sbtn" onclick="sendMsg()">➤</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ── A URL base do servidor é a própria origem da página ──────────
+const SERVER = window.location.origin;
+
+let cfg         = {instance:'', token:''};
+let activePhone = '';
+let chats       = {};
+let pollTimer   = null;
+let sending     = false;
+let lastSeenId  = 0;
+
+const ST = {
+  PENDING:  {icon:'🕐', cls:'PENDING'},
+  SENT:     {icon:'✓',  cls:'SENT'},
+  RECEIVED: {icon:'✓✓', cls:'RECEIVED'},
+  READ:     {icon:'✓✓', cls:'READ'},
+};
+
+// INIT
+(function(){
+  try{ const s=localStorage.getItem('zapi_cfg_v7'); if(s) cfg=JSON.parse(s); }catch(e){}
+  try{ const c=localStorage.getItem('zapi_ch_v7');  if(c) chats=JSON.parse(c); }catch(e){}
+  try{ lastSeenId=parseInt(localStorage.getItem('zapi_lid_v7')||'0'); }catch(e){}
+  if(cfg.instance) document.getElementById('ii').value=cfg.instance;
+  if(cfg.token)    document.getElementById('it').value=cfg.token;
+  updPrev(); updWhUrl();
+  if(cfg.instance&&cfg.token){ document.getElementById('bclr').style.display=''; verifySt(false); }
+  renderList(); updUBadge();
+  document.getElementById('sfooter').textContent=window.location.hostname;
+})();
+
+function zapiBase(){ return `https://api.z-api.io/instances/${cfg.instance}/token/${cfg.token}`; }
+function hasCreds(){ return !!(cfg.instance&&cfg.token); }
+function webhookUrl(){ return SERVER+'/webhook'; }
+
+function updWhUrl(){
+  const el=document.getElementById('wh-url-display');
+  if(el) el.textContent=webhookUrl();
+}
+function copyWh(){
+  navigator.clipboard.writeText(webhookUrl()).then(()=>{
+    const btn=document.querySelector('.copy-btn');
+    const orig=btn.textContent; btn.textContent='✓ Copiado!';
+    setTimeout(()=>btn.textContent=orig,2000);
+  });
+}
+
+// UI
+function showPanel(n){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.ni').forEach(i=>i.classList.remove('active'));
+  document.getElementById('panel-'+n).classList.add('active');
+  document.getElementById('nav-'+n).classList.add('active');
+}
+function tryChat(){ showPanel('chat'); }
+function updPrev(){
+  document.getElementById('pi').textContent=document.getElementById('ii').value.trim()||'ID';
+  document.getElementById('pt').textContent=document.getElementById('it').value.trim()||'TOKEN';
+}
+function showAC(type,msg){ const e=document.getElementById('acfg'); e.className='abox show '+type; e.textContent=msg; clearTimeout(e._t); e._t=setTimeout(()=>e.classList.remove('show'),7000); }
+function showMA(msg){ const e=document.getElementById('malert'); e.textContent=msg; e.classList.add('show'); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.remove('show'),5000); }
+function updConn(ok,txt){ document.getElementById('cdot').className='cdot'+(ok?' on':''); document.getElementById('ctxt').textContent=txt; }
+function setPoll(on){ document.getElementById('pb').className='pbadge'+(on?' on':''); document.getElementById('ptxt').textContent=on?'poll 2s':'off'; }
+
+// CONFIG
+async function saveCfg(){
+  const inst=document.getElementById('ii').value.trim();
+  const tok =document.getElementById('it').value.trim();
+  if(!inst||!tok){ showAC('error','Preencha ID e Token.'); return; }
+  cfg={instance:inst,token:tok};
+  localStorage.setItem('zapi_cfg_v7',JSON.stringify(cfg));
+  document.getElementById('bclr').style.display='';
+  showAC('info','Verificando...');
+  await verifySt(true);
+}
+function clearCfg(){
+  localStorage.removeItem('zapi_cfg_v7');
+  cfg={instance:'',token:''};
+  document.getElementById('ii').value='';
+  document.getElementById('it').value='';
+  document.getElementById('bclr').style.display='none';
+  document.getElementById('sblock').className='sblock';
+  updConn(false,'offline'); updPrev();
+  showAC('info','Credenciais removidas.');
+}
+async function verifySt(afterSave){
+  try{
+    const r=await fetch(zapiBase()+'/status');
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d=await r.json();
+    const sb=document.getElementById('sblock');
+    sb.className='sblock show '+(d.connected?'ok':'err');
+    if(d.connected){
+      document.getElementById('sico').textContent='✅';
+      document.getElementById('stitle').textContent='Instância conectada';
+      document.getElementById('ssub').textContent=d.smartphoneConnected?'celular online':'celular offline';
+      updConn(true,'online');
+      if(afterSave) showAC('success','Credenciais salvas ✓');
+    } else {
+      document.getElementById('sico').textContent='❌';
+      document.getElementById('stitle').textContent='Instância desconectada';
+      document.getElementById('ssub').textContent='Escaneie o QRCode no painel Z-API.';
+      updConn(false,'desconectado');
+      if(afterSave) showAC('error','Instância não conectada ao WhatsApp.');
+    }
+  } catch(e){
+    document.getElementById('sblock').className='sblock show err';
+    document.getElementById('sico').textContent='⚠️';
+    document.getElementById('stitle').textContent='Erro: '+e.message;
+    document.getElementById('ssub').textContent='Verifique ID e Token';
+    updConn(false,'erro');
+    if(afterSave) showAC('error','Erro: '+e.message);
+  }
+}
+
+async function registerWebhook(){
+  if(!hasCreds()){ showAC('error','Salve as credenciais primeiro.'); return; }
+  const wurl=webhookUrl();
+  const btn=document.getElementById('btn-wh');
+  btn.disabled=true; btn.textContent='Registrando...';
+  try{
+    const r=await fetch(zapiBase()+'/update-webhook-received',{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({value:wurl})
+    });
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    await fetch(zapiBase()+'/update-webhook-message-status',{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({value:wurl})
+    }).catch(()=>{});
+    showAC('success',`Webhook registrado! Z-API enviará mensagens para:\n${wurl}`);
+  } catch(e){
+    showAC('error','Erro ao registrar: '+e.message);
+  } finally{
+    btn.disabled=false; btn.textContent='📌 Registrar automaticamente na Z-API';
+  }
+}
+
+// CHAT
+function openChat(){
+  if(!hasCreds()){ showPanel('config'); showAC('error','Configure as credenciais primeiro.'); return; }
+  const phone=document.getElementById('iph').value.trim().replace(/\D/g,'');
+  if(phone.length<10) return;
+  document.getElementById('iph').value='';
+  if(!chats[phone]) chats[phone]={messages:[],unread:0};
+  saveChats(); renderList(); activateChat(phone);
+}
+
+function activateChat(phone){
+  activePhone=phone;
+  chats[phone].unread=0;
+  saveChats(); renderList(); updUBadge();
+  document.getElementById('cempty').style.display='none';
+  document.getElementById('cwi').style.display='flex';
+  document.getElementById('wav').textContent=phone.slice(-4,-2);
+  document.getElementById('wph').textContent='+'+phone;
+  document.getElementById('wst').textContent='conversa ativa';
+  document.getElementById('ttitle').textContent='+'+phone;
+  document.getElementById('tsub').textContent='poll 2s · recebendo mensagens';
+  renderMsgs(); startPolling();
+  document.getElementById('imsg').focus();
+}
+
+function renderList(){
+  const c=document.getElementById('cli');
+  const phones=Object.keys(chats);
+  if(!phones.length){ c.innerHTML='<div style="padding:10px 14px;font-size:11px;color:var(--text3);font-family:var(--mono)">sem conversas</div>'; return; }
+  c.innerHTML='';
+  phones.forEach(ph=>{
+    const ch=chats[ph];
+    const last=ch.messages.length?ch.messages[ch.messages.length-1].text.slice(0,24):'...';
+    const d=document.createElement('div');
+    d.className='ci'+(ph===activePhone?' active':'');
+    d.innerHTML=`<div class="ci-ph">+${ph}</div><div class="ci-prev">${last}</div><div class="udot ${ch.unread>0?'show':''}"></div>`;
+    d.onclick=()=>activateChat(ph);
+    c.appendChild(d);
+  });
+}
+
+function renderMsgs(){
+  const box=document.getElementById('msgs');
+  const msgs=(chats[activePhone]?.messages)||[];
+  box.innerHTML='<div class="daydiv">hoje</div>';
+  if(!msgs.length){
+    const e=document.createElement('div');
+    e.style.cssText='text-align:center;color:var(--text3);font-size:11px;font-family:var(--mono);margin-top:20px';
+    e.textContent='// nenhuma mensagem ainda'; box.appendChild(e); return;
+  }
+  msgs.forEach(m=>{
+    const grp=document.createElement('div'); grp.className='mg '+(m.fromMe?'sent':'recv');
+    const bub=document.createElement('div'); bub.className='mb '+(m.fromMe?'sent':'recv'); bub.textContent=m.text;
+    const meta=document.createElement('div'); meta.className='mmeta '+(m.fromMe?'sent':'recv');
+    const ts=document.createElement('span'); ts.textContent=m.time; meta.appendChild(ts);
+    if(m.fromMe){
+      const si=ST[m.status]||ST.SENT;
+      const st=document.createElement('span'); st.className='mst '+si.cls; st.id='st-'+m.id; st.textContent=si.icon;
+      meta.appendChild(st);
+    }
+    grp.appendChild(bub); grp.appendChild(meta); box.appendChild(grp);
+  });
+  box.scrollTop=box.scrollHeight;
+}
+
+function updateMsgStatus(id,ns){
+  const el=document.getElementById('st-'+id); if(!el) return;
+  const si=ST[ns]||ST.SENT; el.className='mst '+si.cls; el.textContent=si.icon;
+}
+
+// SEND
+async function sendMsg(){
+  if(!activePhone||sending) return;
+  const ta=document.getElementById('imsg');
+  const msg=ta.value.trim(); if(!msg) return;
+  sending=true;
+  const btn=document.getElementById('sbtn');
+  btn.disabled=true; btn.innerHTML='<div class="spin"></div>';
+  try{
+    const r=await fetch(zapiBase()+'/send-text',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({phone:activePhone, message:msg, delayTyping:1})
+    });
+    if(!r.ok){ const e=await r.json().catch(()=>({})); throw new Error(e.message||'HTTP '+r.status); }
+    const d=await r.json();
+    const now=new Date();
+    const time=pad(now.getHours())+':'+pad(now.getMinutes());
+    const id=d.messageId||d.zaapId||('L'+Date.now());
+    chats[activePhone].messages.push({id,text:msg,fromMe:true,time,status:'SENT'});
+    saveChats(); ta.value=''; ta.style.height='auto';
+    renderMsgs(); renderList();
+  } catch(e){ showMA('Erro ao enviar: '+e.message); }
+  finally{ sending=false; btn.disabled=false; btn.innerHTML='➤'; }
+}
+function onKey(e){ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();} }
+function autoH(el){ el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,120)+'px'; }
+function pad(n){ return n.toString().padStart(2,'0'); }
+
+// POLLING — mesmo servidor, zero CORS
+function startPolling(){ stopPolling(); setPoll(true); doPoll(); pollTimer=setInterval(doPoll,2000); }
+function stopPolling(){ if(pollTimer){clearInterval(pollTimer);pollTimer=null;} setPoll(false); }
+
+async function doPoll(){
+  try{
+    const r=await fetch(`${SERVER}/messages?since=${lastSeenId}`);
+    if(!r.ok) return;
+    const data=await r.json();
+    const items=data.messages||[];
+    if(data.lastId) lastSeenId=data.lastId;
+    localStorage.setItem('zapi_lid_v7',String(lastSeenId));
+    if(!items.length) return;
+
+    let changed=false;
+    for(const item of items){
+      const body=item.payload;
+      if(!body||typeof body!=='object') continue;
+      const mid=body.messageId||body.zaapId;
+
+      // STATUS (fromMe=true) → atualiza ✓ ✓✓ ✓✓azul
+      if(body.fromMe===true){
+        if(mid){
+          const ns=mapSt(body.status);
+          if(ns){ Object.values(chats).forEach(ch=>{ const m=ch.messages.find(x=>x.id===mid); if(m&&m.status!==ns){m.status=ns;changed=true;updateMsgStatus(mid,ns);} }); }
+        }
+        continue;
+      }
+
+      // MENSAGEM RECEBIDA
+      if(!body.phone) continue;
+      const phone=body.phone.replace(/\D/g,'');
+      const recv_id=mid||('W'+item.id);
+      const text=body.text?.message||body.body||body.caption||'[mensagem]';
+      const ts_raw=body.moment||body.momment;
+      const ts=ts_raw?new Date(Number(ts_raw)):new Date();
+      const time=pad(ts.getHours())+':'+pad(ts.getMinutes());
+
+      if(!chats[phone]) chats[phone]={messages:[],unread:0};
+      const known=new Set(chats[phone].messages.map(m=>m.id));
+      if(known.has(recv_id)) continue;
+
+      chats[phone].messages.push({id:recv_id,text,fromMe:false,time,status:'RECEIVED'});
+      if(phone!==activePhone) chats[phone].unread=(chats[phone].unread||0)+1;
+      changed=true;
+    }
+    if(changed){ saveChats(); renderMsgs(); renderList(); updUBadge(); }
+  } catch(e){}
+}
+
+function mapSt(s){
+  if(!s) return null; s=s.toUpperCase();
+  if(s==='READ'||s==='PLAYED') return 'READ';
+  if(['RECEIVED','DELIVERED','DELIVERY_ACK','DEVICE_ACK'].includes(s)) return 'RECEIVED';
+  if(['SENT','SERVER_ACK'].includes(s)) return 'SENT';
+  return null;
+}
+
+function updUBadge(){
+  const t=Object.values(chats).reduce((a,c)=>a+(c.unread||0),0);
+  const b=document.getElementById('ubadge'); b.style.display=t>0?'':'none'; b.textContent=t;
+}
+function saveChats(){
+  const out={};
+  Object.keys(chats).forEach(p=>{ out[p]={messages:chats[p].messages.slice(-200),unread:chats[p].unread||0}; });
+  try{ localStorage.setItem('zapi_ch_v7',JSON.stringify(out)); }catch(e){}
+}
+
+window.addEventListener('beforeunload',stopPolling);
+</script>
+</body>
+</html>

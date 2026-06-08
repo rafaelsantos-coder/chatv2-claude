@@ -1,0 +1,14 @@
+{
+  "name": "zapi-chat",
+  "version": "1.0.0",
+  "description": "Interface de chat WhatsApp via Z-API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "keywords": ["zapi", "whatsapp", "chat", "webhook"],
+  "license": "MIT"
+}
