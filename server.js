@@ -6,8 +6,10 @@ const url  = require('url');
 const PORT = process.env.PORT || 3737;
 
 // Mensagens em memória (ring buffer de 500)
-let messages = [];
-let lastId    = 0;
+let messages     = [];
+let lastId       = 0;
+// Set de messageIds já vistos — evita duplicatas da Z-API
+const seenMsgIds = new Set();
 
 // ── helpers ──────────────────────────────────────────────────────────
 function cors(res) {
@@ -33,7 +35,7 @@ function readBody(req) {
 
 // ── roteador ─────────────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
-  const parsed  = url.parse(req.url, true);
+  const parsed   = url.parse(req.url, true);
   const pathname = parsed.pathname.replace(/\/$/, '') || '/';
 
   // Preflight CORS
@@ -46,11 +48,36 @@ const server = http.createServer(async (req, res) => {
     const body = await readBody(req).catch(() => '{}');
     try {
       const payload = JSON.parse(body);
+      const msgId   = payload.messageId || payload.zaapId;
+
+      // ── Deduplicação no servidor ──────────────────────────────
+      // A Z-API pode disparar o mesmo evento múltiplas vezes.
+      // Para mensagens recebidas (fromMe=false) deduplicamos por messageId.
+      // Para callbacks de status (fromMe=true) deixamos passar todos
+      // pois cada um pode ter um status diferente (SENT→RECEIVED→READ).
+      if (!payload.fromMe && msgId) {
+        if (seenMsgIds.has(msgId)) {
+          console.log(`[webhook] duplicata ignorada: ${msgId}`);
+          json(res, { ok: true, duplicate: true });
+          return;
+        }
+        seenMsgIds.add(msgId);
+        // Mantém o set em no máximo 2000 entradas
+        if (seenMsgIds.size > 2000) {
+          const first = seenMsgIds.values().next().value;
+          seenMsgIds.delete(first);
+        }
+      }
+
       lastId++;
       messages.push({ id: lastId, ts: Date.now(), payload });
       if (messages.length > 500) messages = messages.slice(-500);
-      const label = payload.fromMe ? `status:${payload.status}` : `msg de ${payload.phone}`;
+
+      const label = payload.fromMe
+        ? `status:${payload.status} msgId:${msgId}`
+        : `msg de +${payload.phone} | "${String(payload.text?.message || '').slice(0, 30)}"`;
       console.log(`[webhook #${lastId}] ${label}`);
+
     } catch (e) {
       console.warn('[webhook] body inválido:', body.slice(0, 80));
     }
@@ -68,7 +95,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ── GET /status  ← health check / ping ─────────────────────────
+  // ── GET /status  ← health check ────────────────────────────────
   if (req.method === 'GET' && pathname === '/status') {
     json(res, { ok: true, uptime: process.uptime(), messages: messages.length });
     return;

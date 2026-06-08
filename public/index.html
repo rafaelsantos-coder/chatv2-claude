@@ -418,11 +418,17 @@ async function registerWebhook(){
 }
 
 // CHAT
+function normalizePhone(p){
+  // Remove tudo que não é dígito
+  return p.replace(/\D/g,'');
+}
+
 function openChat(){
   if(!hasCreds()){ showPanel('config'); showAC('error','Configure as credenciais primeiro.'); return; }
-  const phone=document.getElementById('iph').value.trim().replace(/\D/g,'');
+  const phone=normalizePhone(document.getElementById('iph').value.trim());
   if(phone.length<10) return;
   document.getElementById('iph').value='';
+  // Garante que o chat existe — mesmo número sempre usa a mesma chave
   if(!chats[phone]) chats[phone]={messages:[],unread:0};
   saveChats(); renderList(); activateChat(phone);
 }
@@ -444,15 +450,26 @@ function activateChat(phone){
 
 function renderList(){
   const c=document.getElementById('cli');
-  const phones=Object.keys(chats);
+  // Ordena: chat ativo primeiro, depois por última mensagem mais recente
+  const phones=Object.keys(chats).sort((a,b)=>{
+    if(a===activePhone) return -1;
+    if(b===activePhone) return 1;
+    const la=chats[a].messages.length;
+    const lb=chats[b].messages.length;
+    if(!la && !lb) return 0;
+    if(!la) return 1;
+    if(!lb) return -1;
+    return 0; // mantém ordem de inserção
+  });
   if(!phones.length){ c.innerHTML='<div style="padding:10px 14px;font-size:11px;color:var(--text3);font-family:var(--mono)">sem conversas</div>'; return; }
   c.innerHTML='';
   phones.forEach(ph=>{
     const ch=chats[ph];
-    const last=ch.messages.length?ch.messages[ch.messages.length-1].text.slice(0,24):'...';
+    const lastMsg=ch.messages.length?ch.messages[ch.messages.length-1]:null;
+    const lastTxt=lastMsg?lastMsg.text.slice(0,24):'...';
     const d=document.createElement('div');
     d.className='ci'+(ph===activePhone?' active':'');
-    d.innerHTML=`<div class="ci-ph">+${ph}</div><div class="ci-prev">${last}</div><div class="udot ${ch.unread>0?'show':''}"></div>`;
+    d.innerHTML=`<div class="ci-ph">+${ph}</div><div class="ci-prev">${lastTxt}</div><div class="udot ${ch.unread>0?'show':''}" ></div>`;
     d.onclick=()=>activateChat(ph);
     c.appendChild(d);
   });
@@ -520,13 +537,18 @@ function pad(n){ return n.toString().padStart(2,'0'); }
 function startPolling(){ stopPolling(); setPoll(true); doPoll(); pollTimer=setInterval(doPoll,2000); }
 function stopPolling(){ if(pollTimer){clearInterval(pollTimer);pollTimer=null;} setPoll(false); }
 
+// Set global de messageIds já inseridos no frontend — segunda camada de deduplicação
+const clientSeenIds = new Set(
+  Object.values(chats).flatMap(ch => ch.messages.map(m => m.id))
+);
+
 async function doPoll(){
   try{
     const r=await fetch(`${SERVER}/messages?since=${lastSeenId}`);
     if(!r.ok) return;
     const data=await r.json();
     const items=data.messages||[];
-    if(data.lastId) lastSeenId=data.lastId;
+    if(data.lastId !== undefined) lastSeenId=data.lastId;
     localStorage.setItem('zapi_lid_v7',String(lastSeenId));
     if(!items.length) return;
 
@@ -536,7 +558,7 @@ async function doPoll(){
       if(!body||typeof body!=='object') continue;
       const mid=body.messageId||body.zaapId;
 
-      // STATUS (fromMe=true) → atualiza ✓ ✓✓ ✓✓azul
+      // ── STATUS (fromMe=true) → atualiza ✓ ✓✓ ✓✓azul ──
       if(body.fromMe===true){
         if(mid){
           const ns=mapSt(body.status);
@@ -545,8 +567,10 @@ async function doPoll(){
         continue;
       }
 
-      // MENSAGEM RECEBIDA
+      // ── MENSAGEM RECEBIDA ──
       if(!body.phone) continue;
+
+      // Normaliza o número — remove tudo que não é dígito
       const phone=body.phone.replace(/\D/g,'');
       const recv_id=mid||('W'+item.id);
       const text=body.text?.message||body.body||body.caption||'[mensagem]';
@@ -554,9 +578,12 @@ async function doPoll(){
       const ts=ts_raw?new Date(Number(ts_raw)):new Date();
       const time=pad(ts.getHours())+':'+pad(ts.getMinutes());
 
+      // Deduplicação no cliente: ignora se messageId já foi inserido
+      if(clientSeenIds.has(recv_id)) continue;
+      clientSeenIds.add(recv_id);
+
+      // Garante que o chat existe (mesmo número = mesmo objeto)
       if(!chats[phone]) chats[phone]={messages:[],unread:0};
-      const known=new Set(chats[phone].messages.map(m=>m.id));
-      if(known.has(recv_id)) continue;
 
       chats[phone].messages.push({id:recv_id,text,fromMe:false,time,status:'RECEIVED'});
       if(phone!==activePhone) chats[phone].unread=(chats[phone].unread||0)+1;
