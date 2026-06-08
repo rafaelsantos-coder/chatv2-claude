@@ -1,14 +1,12 @@
 {
-  "name": "zapi-chat",
-  "version": "1.0.0",
-  "description": "Interface de chat WhatsApp via Z-API",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS"
   },
-  "engines": {
-    "node": ">=14.0.0"
-  },
-  "keywords": ["zapi", "whatsapp", "chat", "webhook"],
-  "license": "MIT"
+  "deploy": {
+    "startCommand": "node server.js",
+    "healthcheckPath": "/status",
+    "healthcheckTimeout": 10,
+    "restartPolicyType": "ON_FAILURE"
+  }
 }
