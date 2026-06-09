@@ -530,11 +530,6 @@ button { font-family: var(--font); }
           <input type="password" id="inp-token" placeholder="B445381FB124D7582F4BB5EA" autocomplete="off" spellcheck="false" oninput="updPreview()">
           <p class="form-hint">// painel Z-API → Instâncias → Token da instância</p>
         </div>
-        <div class="form-row">
-          <label>CLIENT-TOKEN (segurança da conta)</label>
-          <input type="password" id="inp-client-token" placeholder="Fa1b...xxxx" autocomplete="off" spellcheck="false">
-          <p class="form-hint">// painel Z-API → Minha Conta → Segurança → Client-Token (obrigatório)</p>
-        </div>
         <div class="url-preview">
           https://api.z-api.io/instances/<span class="hi" id="prev-inst">ID</span>/token/<span class="hi" id="prev-tok">TOKEN</span>/send-text
         </div>
@@ -688,7 +683,7 @@ button { font-family: var(--font); }
 // ════════════════════════════════════════════════════════════════
 const SERVER = window.location.origin;
 
-let creds        = { instance: '', token: '', clientToken: '' };
+let creds        = { instance: '', token: '' };
 let chats        = {};          // phone → { name, photo, messages:[], unread }
 let activePhone  = '';
 let pollTimer    = null;
@@ -713,11 +708,10 @@ const STATUS_ICONS = {
   try { const c = localStorage.getItem('zc_chats'); if (c) chats = JSON.parse(c); } catch (e) {}
   try { lastEventId = parseInt(localStorage.getItem('zc_lid') || '0'); } catch (e) {}
 
-  if (creds.instance)    document.getElementById('inp-instance').value     = creds.instance;
-  if (creds.token)       document.getElementById('inp-token').value        = creds.token;
-  if (creds.clientToken) document.getElementById('inp-client-token').value = creds.clientToken;
+  if (creds.instance) document.getElementById('inp-instance').value = creds.instance;
+  if (creds.token)    document.getElementById('inp-token').value    = creds.token;
   updPreview(); updWebhookUrl();
-  if (creds.instance && creds.token && creds.clientToken) {
+  if (creds.instance && creds.token) {
     document.getElementById('btn-clear').style.display = '';
     checkInstance(false);
   }
@@ -798,19 +792,13 @@ function closeLightbox() {
 //  CONFIGURAÇÃO
 // ════════════════════════════════════════════════════════════════
 function zapiBase() { return `https://api.z-api.io/instances/${creds.instance}/token/${creds.token}`; }
-function hasCreds() { return !!(creds.instance && creds.token && creds.clientToken); }
-function zapiHeaders(extra) {
-  const h = { 'Client-Token': creds.clientToken };
-  if (extra) Object.assign(h, extra);
-  return h;
-}
+function hasCreds() { return !!(creds.instance && creds.token); }
 
 async function saveCreds() {
   const inst = document.getElementById('inp-instance').value.trim();
   const tok  = document.getElementById('inp-token').value.trim();
-  const ct   = document.getElementById('inp-client-token').value.trim();
-  if (!inst || !tok || !ct) { showAlert('err', 'Preencha o ID, o Token e o Client-Token.'); return; }
-  creds = { instance: inst, token: tok, clientToken: ct };
+  if (!inst || !tok) { showAlert('err', 'Preencha o ID e o Token.'); return; }
+  creds = { instance: inst, token: tok };
   localStorage.setItem('zc_creds', JSON.stringify(creds));
   document.getElementById('btn-clear').style.display = '';
   showAlert('inf', 'Verificando conexão...');
@@ -819,10 +807,9 @@ async function saveCreds() {
 
 function clearCreds() {
   localStorage.removeItem('zc_creds');
-  creds = { instance: '', token: '', clientToken: '' };
-  document.getElementById('inp-instance').value     = '';
-  document.getElementById('inp-token').value        = '';
-  document.getElementById('inp-client-token').value = '';
+  creds = { instance: '', token: '' };
+  document.getElementById('inp-instance').value = '';
+  document.getElementById('inp-token').value    = '';
   document.getElementById('btn-clear').style.display = 'none';
   document.getElementById('status-block').className  = 'status-block';
   setConnStatus(false, 'offline'); updPreview();
@@ -831,8 +818,14 @@ function clearCreds() {
 
 async function checkInstance(afterSave) {
   try {
-    const r = await fetch(zapiBase() + '/status', { headers: zapiHeaders() });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const r = await fetch(zapiBase() + '/status');
+    if (!r.ok) {
+      // Captura o detalhe do erro
+      const txt = await r.text().catch(()=>'');
+      const err = new Error('HTTP ' + r.status);
+      err.detail = txt.slice(0, 200);
+      throw err;
+    }
     const d = await r.json();
     const sb = document.getElementById('status-block');
     sb.className = 'status-block show ' + (d.connected ? 'ok' : 'err');
@@ -852,10 +845,10 @@ async function checkInstance(afterSave) {
   } catch (e) {
     document.getElementById('status-block').className = 'status-block show err';
     document.getElementById('sb-ico').textContent   = '⚠️';
-    document.getElementById('sb-title').textContent = 'Erro ao verificar: ' + e.message;
-    document.getElementById('sb-sub').textContent   = 'Verifique ID e Token';
+    document.getElementById('sb-title').textContent = 'Erro: ' + e.message;
+    document.getElementById('sb-sub').textContent   = e.detail || 'Verifique ID e Token';
     setConnStatus(false, 'erro');
-    if (afterSave) showAlert('err', 'Erro: ' + e.message);
+    if (afterSave) showAlert('err', 'Erro: ' + e.message + (e.detail ? ' — ' + e.detail : ''));
   }
 }
 
@@ -866,13 +859,13 @@ async function registerWebhook() {
   btn.disabled = true; btn.textContent = 'Registrando...';
   try {
     const r = await fetch(zapiBase() + '/update-webhook-received', {
-      method: 'PUT', headers: zapiHeaders({ 'Content-Type': 'application/json' }),
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ value: wurl })
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     // Também registra webhook de status de mensagens
     await fetch(zapiBase() + '/update-webhook-message-status', {
-      method: 'PUT', headers: zapiHeaders({ 'Content-Type': 'application/json' }),
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ value: wurl })
     }).catch(() => {});
     showAlert('ok', `Webhook registrado em:\n${wurl}`);
@@ -896,7 +889,7 @@ function ensureChat(ph, meta = {}) {
 
 async function fetchContactMeta(ph) {
   try {
-    const r = await fetch(zapiBase() + `/contacts/${ph}`, { headers: zapiHeaders() });
+    const r = await fetch(zapiBase() + `/contacts/${ph}`);
     if (!r.ok) return;
     const d = await r.json();
     const name  = d.name || d.notify || d.short || ph;
@@ -1139,7 +1132,7 @@ async function sendMessage() {
 
     const r = await fetch(zapiBase() + '/' + endpoint, {
       method: 'POST',
-      headers: zapiHeaders({ 'Content-Type': 'application/json' }),
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
 
