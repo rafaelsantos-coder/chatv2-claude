@@ -591,7 +591,10 @@ button { font-family: var(--font); }
 
       <!-- Lista de conversas -->
       <div class="chat-list">
-        <div class="chat-list-hdr">Conversas</div>
+        <div class="chat-list-hdr" style="display:flex;justify-content:space-between;align-items:center">
+            <span>Conversas</span>
+            <button onclick="mergeDuplicateChats();renderChatList();updUnreadBadge()" style="background:transparent;border:1px solid var(--c-border);color:var(--c-text3);font-size:9px;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:var(--mono)" title="Mesclar conversas duplicadas">🔄 mesclar</button>
+          </div>
         <div id="chat-list-items">
           <div style="padding:12px;font-size:11px;color:var(--c-text3);font-family:var(--mono)">Sem conversas ainda</div>
         </div>
@@ -724,6 +727,9 @@ const STATUS_ICONS = {
 
   // Reconstruir clientSeen a partir do histórico salvo
   Object.values(chats).forEach(ch => ch.messages.forEach(m => clientSeen.add(m.id)));
+
+  // Mesclar chats duplicados (mesmo nome mas chaves diferentes)
+  mergeDuplicateChats();
 
   renderChatList(); updUnreadBadge();
   document.getElementById('sidebar-footer').textContent = window.location.hostname;
@@ -892,7 +898,48 @@ async function registerWebhook() {
 // ════════════════════════════════════════════════════════════════
 //  GESTÃO DE CHATS
 // ════════════════════════════════════════════════════════════════
-function phone(raw) { return String(raw).replace(/\D/g, ''); }
+function phone(raw) {
+  // Remove @lid, @c.us, @s.whatsapp.net e qualquer sufixo
+  let s = String(raw).split('@')[0].replace(/\D/g, '');
+  return s;
+}
+
+// Detecta se um identificador é um LID (não um número de telefone real)
+function isLid(p) {
+  // LIDs têm 13-18 dígitos e geralmente começam com números altos
+  // Telefones brasileiros têm 12-13 dígitos (55 + DDD + número)
+  // LIDs típicos: 260640727924968 (15 dígitos), 81896604192873 (14 dígitos)
+  // Vamos considerar LID se:
+  //   - tem mais de 13 dígitos (telefones reais têm no máximo 13 com DDI)
+  //   - OU contém @lid no original
+  const raw = String(p);
+  if (raw.includes('@lid')) return true;
+  const digits = raw.replace(/\D/g, '');
+  // Telefone com DDI tem no máximo 13 dígitos (ex: 5511999999999)
+  // Se for maior, é provavelmente um LID
+  return digits.length > 13;
+}
+
+// Resolve o melhor identificador disponível no payload para usar como chave de chat
+function resolvePhone(payload) {
+  // Prioridade: phone (se for número real) > connectedPhone não, é o nosso > qualquer coisa
+  const raw = payload.phone || '';
+  const digits = phone(raw);
+
+  // Se o phone do payload parece ser um número real, usa ele
+  if (!isLid(raw) && digits.length >= 10 && digits.length <= 13) {
+    return digits;
+  }
+
+  // Caso contrário, tenta o participantPhone (em grupos ou mensagens com LID)
+  if (payload.participantPhone) {
+    const pp = phone(payload.participantPhone);
+    if (!isLid(payload.participantPhone) && pp.length >= 10 && pp.length <= 13) return pp;
+  }
+
+  // Última opção: usa o que veio (pode ser LID, mas pelo menos é consistente)
+  return digits;
+}
 
 function ensureChat(ph, meta = {}) {
   if (!chats[ph]) chats[ph] = { name: meta.name || ph, photo: meta.photo || null, messages: [], unread: 0 };
@@ -1325,27 +1372,38 @@ async function poll() {
 
       // ── MENSAGEM RECEBIDA (fromMe=false) ─────────────────────
       if (!p.phone) continue;
-      const ph     = phone(p.phone);
-      const rcvId  = mid || ('W' + evt.id);
+      let ph = resolvePhone(p);
+      const rcvId = mid || ('W' + evt.id);
 
       if (clientSeen.has(rcvId)) continue;
       clientSeen.add(rcvId);
 
-      // Extrair conteúdo por tipo
+      // Se ainda é um LID, tenta encontrar um chat existente que tenha o mesmo nome
+      // (caso o usuário já tenha aberto a conversa com o número real)
+      if (isLid(p.phone) && p.senderName) {
+        const matchingChat = Object.keys(chats).find(existingPh => {
+          return chats[existingPh].name === p.senderName ||
+                 chats[existingPh].name === p.chatName;
+        });
+        if (matchingChat) ph = matchingChat;
+      }
+
+      // Se o chat ativo tem o mesmo nome, manda pra ele
+      if (isLid(p.phone) && activePhone && chats[activePhone] &&
+          (chats[activePhone].name === p.senderName || chats[activePhone].name === p.chatName)) {
+        ph = activePhone;
+      }
+
       const msgObj = buildMsgObject(p, rcvId, ph);
 
-      // Garantir que o chat existe com nome do webhook
       ensureChat(ph, { name: p.chatName || p.senderName || ph, photo: p.senderPhoto || p.photo || null });
 
-      // Buscar metadados do contato se ainda não tem nome real
       if (!chats[ph].name || chats[ph].name === ph) fetchContactMeta(ph);
 
       chats[ph].messages.push(msgObj);
-      clientSeen.add(rcvId);
       if (ph !== activePhone) chats[ph].unread = (chats[ph].unread || 0) + 1;
       changed = true;
 
-      // Se o chat está ativo, adiciona a mensagem na tela
       if (ph === activePhone) appendMsg(msgObj);
 
     } // end for
@@ -1389,6 +1447,52 @@ function mapStatus(s) {
 // ════════════════════════════════════════════════════════════════
 //  STORAGE
 // ════════════════════════════════════════════════════════════════
+// Mescla chats que parecem ser do mesmo contato (mesmo nome, mas chaves diferentes)
+function mergeDuplicateChats() {
+  const byName = {};
+  const lids = [];
+
+  Object.keys(chats).forEach(ph => {
+    const ch = chats[ph];
+    // Identifica chats com chaves LID (números muito grandes)
+    if (isLid(ph)) {
+      lids.push(ph);
+    }
+    if (ch.name && ch.name !== ph) {
+      if (!byName[ch.name]) byName[ch.name] = [];
+      byName[ch.name].push(ph);
+    }
+  });
+
+  // Para cada nome com mais de um chat, mescla tudo no chat com chave que NÃO é LID
+  Object.entries(byName).forEach(([name, phones]) => {
+    if (phones.length < 2) return;
+
+    // Encontra o chat "principal" (não-LID, ou o primeiro)
+    let mainPh = phones.find(p => !isLid(p));
+    if (!mainPh) mainPh = phones[0];
+
+    phones.forEach(ph => {
+      if (ph === mainPh) return;
+      // Move todas as mensagens deste chat para o principal
+      chats[mainPh].messages.push(...chats[ph].messages);
+      chats[mainPh].unread = (chats[mainPh].unread || 0) + (chats[ph].unread || 0);
+      if (!chats[mainPh].photo && chats[ph].photo) chats[mainPh].photo = chats[ph].photo;
+      delete chats[ph];
+      console.log(`[merge] ${ph} → ${mainPh} (${name})`);
+    });
+
+    // Ordena mensagens por id/tempo
+    chats[mainPh].messages.sort((a, b) => {
+      const ta = a.time || '';
+      const tb = b.time || '';
+      return ta.localeCompare(tb);
+    });
+  });
+
+  saveChats();
+}
+
 function saveChats() {
   const out = {};
   Object.keys(chats).forEach(ph => {
