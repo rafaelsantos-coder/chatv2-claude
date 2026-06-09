@@ -407,6 +407,64 @@ button { font-family: var(--font); }
 .send-btn:hover { background: var(--c-green-d); }
 .send-btn:disabled { opacity: .4; cursor: not-allowed; }
 
+/* MIC BUTTON (gravação de áudio) */
+.mic-btn {
+  width: 38px; height: 38px;
+  background: var(--c-surface2); border: 1px solid var(--c-border);
+  border-radius: var(--rs); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--c-text2); font-size: 17px; flex-shrink: 0;
+  transition: all .15s;
+}
+.mic-btn:hover { background: var(--c-surface3); color: var(--c-green); }
+
+/* RECORDING UI — substitui a linha do textarea durante gravação */
+.recording-ui {
+  display: none;
+  flex: 1; align-items: center; gap: 12px;
+  padding: 0 12px;
+  background: var(--c-surface2);
+  border: 1px solid var(--c-green-b);
+  border-radius: var(--rs);
+  height: 38px;
+}
+.recording-ui.show { display: flex; }
+.rec-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--c-err);
+  animation: rec-pulse 1s infinite;
+  flex-shrink: 0;
+}
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: .4; transform: scale(.85); }
+}
+.rec-timer {
+  font-family: var(--mono); font-size: 13px; font-weight: 500;
+  color: var(--c-text); min-width: 44px;
+}
+.rec-wave {
+  flex: 1; display: flex; align-items: center; gap: 2px;
+  height: 100%;
+}
+.rec-wave-bar {
+  flex: 1; background: var(--c-green);
+  border-radius: 2px;
+  min-height: 3px;
+  transition: height .1s;
+}
+.rec-cancel, .rec-send {
+  width: 30px; height: 30px;
+  border: none; border-radius: 50%;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  font-size: 15px; flex-shrink: 0;
+  transition: all .15s;
+}
+.rec-cancel { background: var(--c-err-bg); color: var(--c-err); }
+.rec-cancel:hover { background: rgba(248,113,113,.2); }
+.rec-send { background: var(--c-green); color: #000; }
+.rec-send:hover { background: var(--c-green-d); }
+
 /* Attach menu */
 .attach-menu-wrapper { position: relative; }
 .attach-menu {
@@ -647,16 +705,14 @@ button { font-family: var(--font); }
             <div class="input-row">
 
               <!-- Botão de anexo + menu -->
-              <div class="attach-menu-wrapper">
+              <div class="attach-menu-wrapper" id="attach-wrapper">
                 <button class="attach-btn" id="attach-toggle" onclick="toggleAttachMenu()" title="Anexar">📎</button>
                 <div class="attach-menu" id="attach-menu">
                   <div class="attach-option" onclick="pickFile('image')"><span class="attach-option-ic">🖼️</span> Imagem</div>
                   <div class="attach-option" onclick="pickFile('video')"><span class="attach-option-ic">🎬</span> Vídeo</div>
-                  <div class="attach-option" onclick="pickFile('audio')"><span class="attach-option-ic">🎵</span> Áudio</div>
                   <div class="attach-option" onclick="pickFile('document')"><span class="attach-option-ic">📄</span> Documento</div>
                   <div class="attach-option" onclick="pickFile('sticker')"><span class="attach-option-ic">🎭</span> Figurinha</div>
                 </div>
-                <!-- Input de arquivo oculto -->
                 <input type="file" id="file-input" style="display:none" onchange="onFileSelected(event)">
               </div>
 
@@ -669,6 +725,19 @@ button { font-family: var(--font); }
                 oninput="autoResize(this)"
               ></textarea>
 
+              <!-- UI de gravação (aparece durante a gravação) -->
+              <div class="recording-ui" id="recording-ui">
+                <span class="rec-dot"></span>
+                <span class="rec-timer" id="rec-timer">0:00</span>
+                <div class="rec-wave" id="rec-wave"></div>
+                <button class="rec-cancel" onclick="cancelRecording()" title="Cancelar">✕</button>
+                <button class="rec-send" onclick="stopAndSendRecording()" title="Enviar áudio">➤</button>
+              </div>
+
+              <!-- Botão de microfone (visível quando NÃO está gravando) -->
+              <button class="mic-btn" id="mic-btn" onclick="startRecording()" title="Gravar áudio">🎤</button>
+
+              <!-- Botão de envio de texto -->
               <button class="send-btn" id="send-btn" onclick="sendMessage()">➤</button>
             </div>
           </div>
@@ -922,28 +991,23 @@ function isLid(p) {
 
 // Resolve o melhor identificador disponível no payload para usar como chave de chat
 function resolvePhone(payload) {
+  // Prioridade: phone (se for número real) > connectedPhone não, é o nosso > qualquer coisa
   const raw = payload.phone || '';
   const digits = phone(raw);
-  if (!isLid(raw) && digits.length >= 10 && digits.length <= 13) return digits;
+
+  // Se o phone do payload parece ser um número real, usa ele
+  if (!isLid(raw) && digits.length >= 10 && digits.length <= 13) {
+    return digits;
+  }
+
+  // Caso contrário, tenta o participantPhone (em grupos ou mensagens com LID)
   if (payload.participantPhone) {
     const pp = phone(payload.participantPhone);
     if (!isLid(payload.participantPhone) && pp.length >= 10 && pp.length <= 13) return pp;
   }
+
+  // Última opção: usa o que veio (pode ser LID, mas pelo menos é consistente)
   return digits;
-}
-
-// Retorna true se o payload contém algum tipo de conteúdo de mensagem
-function hasMessageContent(p) {
-  return !!(p.text || p.image || p.video || p.audio || p.document ||
-            p.sticker || p.location || p.contact || p.reaction);
-}
-
-// Encontra chave de chat existente pelo nome do contato (preferindo chave não-LID)
-function findChatByName(name) {
-  if (!name) return null;
-  const keys = Object.keys(chats).filter(k => chats[k].name === name);
-  if (!keys.length) return null;
-  return keys.find(k => !isLid(k)) || keys[0];
 }
 
 function ensureChat(ph, meta = {}) {
@@ -1383,14 +1447,20 @@ async function poll() {
       if (clientSeen.has(rcvId)) continue;
       clientSeen.add(rcvId);
 
-      // Ignora callbacks sem conteúdo (protocolo, sistema, ephemeral, etc.)
-      if (!hasMessageContent(p)) continue;
+      // Se ainda é um LID, tenta encontrar um chat existente que tenha o mesmo nome
+      // (caso o usuário já tenha aberto a conversa com o número real)
+      if (isLid(p.phone) && p.senderName) {
+        const matchingChat = Object.keys(chats).find(existingPh => {
+          return chats[existingPh].name === p.senderName ||
+                 chats[existingPh].name === p.chatName;
+        });
+        if (matchingChat) ph = matchingChat;
+      }
 
-      // Redireciona para chat existente pelo nome — evita duplicatas independente de LID/formato
-      const targetName = p.chatName || p.senderName;
-      if (targetName) {
-        const existing = findChatByName(targetName);
-        if (existing) ph = existing;
+      // Se o chat ativo tem o mesmo nome, manda pra ele
+      if (isLid(p.phone) && activePhone && chats[activePhone] &&
+          (chats[activePhone].name === p.senderName || chats[activePhone].name === p.chatName)) {
+        ph = activePhone;
       }
 
       const msgObj = buildMsgObject(p, rcvId, ph);
@@ -1407,7 +1477,7 @@ async function poll() {
 
     } // end for
 
-    if (changed) { mergeDuplicateChats(); saveChats(); renderChatList(); updUnreadBadge(); }
+    if (changed) { saveChats(); renderChatList(); updUnreadBadge(); }
 
   } catch (e) { /* silencioso */ }
 }
@@ -1505,6 +1575,234 @@ function saveChats() {
 // ════════════════════════════════════════════════════════════════
 function pad(n) { return String(n).padStart(2, '0'); }
 function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ════════════════════════════════════════════════════════════════
+//  GRAVAÇÃO DE ÁUDIO (estilo WhatsApp)
+// ════════════════════════════════════════════════════════════════
+let mediaRecorder  = null;
+let audioChunks    = [];
+let recStream      = null;
+let recStartTime   = 0;
+let recTimerInt    = null;
+let audioContext   = null;
+let analyser       = null;
+let waveAnimFrame  = null;
+let recCancelled   = false;
+
+async function startRecording() {
+  if (!activePhone) { showError('Abra uma conversa primeiro'); return; }
+  if (mediaRecorder && mediaRecorder.state === 'recording') return;
+
+  try {
+    recStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    });
+  } catch (e) {
+    showError('Permissão de microfone negada');
+    return;
+  }
+
+  // Detecta formato suportado — Z-API aceita ogg, mp3, mp4, m4a
+  let mimeType = 'audio/webm;codecs=opus';
+  if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/webm';
+  if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/ogg;codecs=opus';
+  if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'audio/mp4';
+
+  audioChunks = [];
+  recCancelled = false;
+  mediaRecorder = new MediaRecorder(recStream, { mimeType });
+
+  mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    cleanupRecording();
+    if (recCancelled || audioChunks.length === 0) return;
+    sendRecordedAudio(audioChunks, mediaRecorder.mimeType);
+  };
+
+  mediaRecorder.start(100);
+  recStartTime = Date.now();
+  showRecordingUI();
+  startTimer();
+  setupAudioAnalysis();
+}
+
+function showRecordingUI() {
+  document.getElementById('recording-ui').classList.add('show');
+  document.getElementById('msg-textarea').style.display = 'none';
+  document.getElementById('mic-btn').style.display = 'none';
+  document.getElementById('send-btn').style.display = 'none';
+  document.getElementById('attach-wrapper').style.display = 'none';
+}
+
+function hideRecordingUI() {
+  document.getElementById('recording-ui').classList.remove('show');
+  document.getElementById('msg-textarea').style.display = '';
+  document.getElementById('mic-btn').style.display = '';
+  document.getElementById('send-btn').style.display = '';
+  document.getElementById('attach-wrapper').style.display = '';
+}
+
+function startTimer() {
+  if (recTimerInt) clearInterval(recTimerInt);
+  recTimerInt = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - recStartTime) / 1000);
+    const m = Math.floor(elapsed / 60);
+    const s = elapsed % 60;
+    document.getElementById('rec-timer').textContent = `${m}:${String(s).padStart(2,'0')}`;
+
+    // Limita a 2 minutos
+    if (elapsed >= 120) stopAndSendRecording();
+  }, 250);
+}
+
+function setupAudioAnalysis() {
+  try {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioContext.createMediaStreamSource(recStream);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 64;
+    source.connect(analyser);
+
+    const wave = document.getElementById('rec-wave');
+    wave.innerHTML = '';
+    const N = 20;
+    const bars = [];
+    for (let i = 0; i < N; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'rec-wave-bar';
+      bar.style.height = '3px';
+      wave.appendChild(bar);
+      bars.push(bar);
+    }
+
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    function animate() {
+      analyser.getByteFrequencyData(data);
+      for (let i = 0; i < bars.length; i++) {
+        const val = data[i % data.length] / 255;
+        bars[i].style.height = Math.max(3, val * 22) + 'px';
+      }
+      waveAnimFrame = requestAnimationFrame(animate);
+    }
+    animate();
+  } catch (e) {
+    console.warn('Sem análise de áudio:', e);
+  }
+}
+
+function cleanupRecording() {
+  if (recTimerInt) { clearInterval(recTimerInt); recTimerInt = null; }
+  if (waveAnimFrame) { cancelAnimationFrame(waveAnimFrame); waveAnimFrame = null; }
+  if (audioContext) { audioContext.close().catch(()=>{}); audioContext = null; }
+  if (recStream) {
+    recStream.getTracks().forEach(t => t.stop());
+    recStream = null;
+  }
+  hideRecordingUI();
+  document.getElementById('rec-timer').textContent = '0:00';
+}
+
+function cancelRecording() {
+  if (!mediaRecorder) return;
+  recCancelled = true;
+  if (mediaRecorder.state === 'recording') mediaRecorder.stop();
+  else cleanupRecording();
+}
+
+function stopAndSendRecording() {
+  if (!mediaRecorder) return;
+  if (mediaRecorder.state === 'recording') mediaRecorder.stop();
+}
+
+async function sendRecordedAudio(chunks, mimeType) {
+  if (!activePhone) return;
+
+  const blob = new Blob(chunks, { type: mimeType });
+  if (blob.size < 1000) {
+    showError('Áudio muito curto');
+    return;
+  }
+
+  // Converte para base64
+  const base64 = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
+  const localUrl = URL.createObjectURL(blob);
+  const now = new Date();
+  const time = pad(now.getHours()) + ':' + pad(now.getMinutes());
+  const tempId = 'L' + Date.now();
+
+  // Adiciona à conversa imediatamente com status PENDING
+  const tempMsg = {
+    id: tempId, fromMe: true, time, status: 'PENDING',
+    text: '', audio: { audioUrl: localUrl, isPtt: true }
+  };
+  clientSeen.add(tempId);
+  chats[activePhone].messages.push(tempMsg);
+  appendMsg(tempMsg);
+  saveChats();
+  renderChatList();
+
+  // Envia para a Z-API
+  try {
+    const r = await fetch(zapiBase() + '/send-audio', {
+      method: 'POST',
+      headers: zapiHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        phone: activePhone,
+        audio: base64,
+        waveform: true,
+        viewOnce: false
+      })
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.message || 'HTTP ' + r.status);
+    }
+    const d = await r.json();
+    // Atualiza o id real e o status
+    const realId = d.messageId || d.zaapId || tempId;
+    const msg = chats[activePhone].messages.find(m => m.id === tempId);
+    if (msg) {
+      const oldId = msg.id;
+      msg.id = realId;
+      msg.status = 'SENT';
+      clientSeen.add(realId);
+      // Atualiza o id do elemento no DOM
+      const el = document.getElementById('st-' + oldId);
+      if (el) {
+        el.id = 'st-' + realId;
+        el.className = 'msg-status SENT';
+        el.textContent = '✓';
+      }
+      saveChats();
+    }
+  } catch (e) {
+    showError('Erro ao enviar áudio: ' + e.message);
+    const msg = chats[activePhone].messages.find(m => m.id === tempId);
+    if (msg) {
+      const el = document.getElementById('st-' + tempId);
+      if (el) { el.textContent = '⚠️'; el.className = 'msg-status'; }
+    }
+  }
+}
+
+// Pressionar segurando o mic (PTT estilo WhatsApp) — opcional
+let micPressTimer = null;
+document.getElementById('mic-btn')?.addEventListener('mousedown', e => {
+  micPressTimer = setTimeout(() => startRecording(), 300);
+});
+document.getElementById('mic-btn')?.addEventListener('mouseup', e => {
+  if (micPressTimer) { clearTimeout(micPressTimer); micPressTimer = null; }
+});
 
 window.addEventListener('beforeunload', stopPolling);
 </script>
