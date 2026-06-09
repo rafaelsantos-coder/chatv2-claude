@@ -1,3 +1,6 @@
+
+https://chatv2-claude-production.up.railway.app/
+
 # Z-API Chat v2 — Chatbot WhatsApp completo
 
 Interface profissional de chatbot integrada à [Z-API](https://z-api.io).
