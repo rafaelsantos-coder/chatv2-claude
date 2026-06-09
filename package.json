@@ -1,14 +1,9 @@
 {
   "name": "zapi-chat",
-  "version": "1.0.0",
-  "description": "Interface de chat WhatsApp via Z-API",
+  "version": "2.0.0",
+  "description": "Chatbot WhatsApp via Z-API — recebe e envia mensagens, mídias, stickers e documentos",
   "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "engines": {
-    "node": ">=14.0.0"
-  },
-  "keywords": ["zapi", "whatsapp", "chat", "webhook"],
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=14.0.0" },
   "license": "MIT"
 }

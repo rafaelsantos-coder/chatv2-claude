@@ -2,6 +2,6 @@ services:
   - type: web
     name: zapi-chat
     env: node
-    buildCommand: echo "no build needed"
+    buildCommand: echo ok
     startCommand: node server.js
     healthCheckPath: /status

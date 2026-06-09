@@ -5,111 +5,88 @@ const url  = require('url');
 
 const PORT = process.env.PORT || 3737;
 
-// Mensagens em memória (ring buffer de 500)
-let messages     = [];
-let lastId       = 0;
-// Set de messageIds já vistos — evita duplicatas da Z-API
-const seenMsgIds = new Set();
+// ── Armazenamento em memória ──────────────────────────────────────────
+let events       = [];   // todos os webhooks recebidos
+let eventId      = 0;
+const seenMsgIds = new Set(); // deduplicação por messageId
 
-// ── helpers ──────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin',  '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
-
 function json(res, data, status = 200) {
   cors(res);
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(data));
 }
-
 function readBody(req) {
   return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', chunk => body += chunk);
-    req.on('end',  ()    => resolve(body));
+    let b = '';
+    req.on('data', c => b += c);
+    req.on('end', () => resolve(b));
     req.on('error', reject);
   });
 }
 
-// ── roteador ─────────────────────────────────────────────────────────
+// ── Roteador ─────────────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   const parsed   = url.parse(req.url, true);
   const pathname = parsed.pathname.replace(/\/$/, '') || '/';
 
-  // Preflight CORS
-  if (req.method === 'OPTIONS') {
-    cors(res); res.writeHead(204); res.end(); return;
-  }
+  if (req.method === 'OPTIONS') { cors(res); res.writeHead(204); res.end(); return; }
 
-  // ── POST /webhook  ← Z-API chama aqui ──────────────────────────
+  // POST /webhook ← Z-API envia aqui todos os callbacks
   if (req.method === 'POST' && pathname === '/webhook') {
-    const body = await readBody(req).catch(() => '{}');
+    const raw = await readBody(req).catch(() => '{}');
     try {
-      const payload = JSON.parse(body);
-      const msgId   = payload.messageId || payload.zaapId;
+      const payload = JSON.parse(raw);
+      const mid     = payload.messageId || payload.zaapId;
 
-      // ── Deduplicação no servidor ──────────────────────────────
-      // A Z-API pode disparar o mesmo evento múltiplas vezes.
-      // Para mensagens recebidas (fromMe=false) deduplicamos por messageId.
-      // Para callbacks de status (fromMe=true) deixamos passar todos
-      // pois cada um pode ter um status diferente (SENT→RECEIVED→READ).
-      if (!payload.fromMe && msgId) {
-        if (seenMsgIds.has(msgId)) {
-          console.log(`[webhook] duplicata ignorada: ${msgId}`);
-          json(res, { ok: true, duplicate: true });
-          return;
+      // Deduplicação: mensagens recebidas (fromMe=false) só uma vez por messageId
+      if (!payload.fromMe && mid) {
+        if (seenMsgIds.has(mid)) {
+          console.log(`[dup] ${mid}`);
+          json(res, { ok: true, dup: true }); return;
         }
-        seenMsgIds.add(msgId);
-        // Mantém o set em no máximo 2000 entradas
-        if (seenMsgIds.size > 2000) {
-          const first = seenMsgIds.values().next().value;
-          seenMsgIds.delete(first);
-        }
+        seenMsgIds.add(mid);
+        if (seenMsgIds.size > 3000) seenMsgIds.delete(seenMsgIds.values().next().value);
       }
 
-      lastId++;
-      messages.push({ id: lastId, ts: Date.now(), payload });
-      if (messages.length > 500) messages = messages.slice(-500);
+      eventId++;
+      events.push({ id: eventId, ts: Date.now(), payload });
+      if (events.length > 1000) events = events.slice(-1000);
 
-      const label = payload.fromMe
-        ? `status:${payload.status} msgId:${msgId}`
-        : `msg de +${payload.phone} | "${String(payload.text?.message || '').slice(0, 30)}"`;
-      console.log(`[webhook #${lastId}] ${label}`);
-
-    } catch (e) {
-      console.warn('[webhook] body inválido:', body.slice(0, 80));
-    }
+      const lbl = payload.fromMe
+        ? `[status] ${payload.status} → ${payload.phone}`
+        : `[recv] ${payload.phone} | ${JSON.stringify(payload.text?.message || payload.image ? '📷' : payload.audio ? '🎵' : payload.document ? '📄' : payload.sticker ? '🎭' : '?').slice(0, 40)}`;
+      console.log(`#${eventId} ${lbl}`);
+    } catch (e) { console.warn('[webhook] JSON inválido'); }
     json(res, { ok: true });
     return;
   }
 
-  // ── GET /messages?since=N  ← frontend busca novidades ──────────
-  if (req.method === 'GET' && pathname === '/messages') {
+  // GET /events?since=N ← frontend busca novidades
+  if (req.method === 'GET' && pathname === '/events') {
     const since = parseInt(parsed.query.since || '0', 10);
-    json(res, {
-      messages: messages.filter(m => m.id > since),
-      lastId
-    });
+    json(res, { events: events.filter(e => e.id > since), lastId: eventId });
     return;
   }
 
-  // ── GET /status  ← health check ────────────────────────────────
+  // GET /status
   if (req.method === 'GET' && pathname === '/status') {
-    json(res, { ok: true, uptime: process.uptime(), messages: messages.length });
+    json(res, { ok: true, uptime: Math.floor(process.uptime()), events: events.length });
     return;
   }
 
-  // ── GET /  ← serve o index.html ────────────────────────────────
+  // GET / → index.html
   if (req.method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
-    const file = path.join(__dirname, 'public', 'index.html');
-    if (fs.existsSync(file)) {
+    const f = path.join(__dirname, 'public', 'index.html');
+    if (fs.existsSync(f)) {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(fs.readFileSync(file));
-    } else {
-      res.writeHead(404); res.end('index.html não encontrado em /public');
-    }
+      res.end(fs.readFileSync(f));
+    } else { res.writeHead(404); res.end('index.html não encontrado'); }
     return;
   }
 
@@ -117,12 +94,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log('');
-  console.log('┌─────────────────────────────────────────┐');
-  console.log('│         Z-API Chat — Servidor Web        │');
-  console.log('├─────────────────────────────────────────┤');
-  console.log(`│  Porta:   ${PORT}                            │`);
-  console.log('│  Chat:    https://SEU-DOMINIO.railway.app│');
-  console.log('│  Webhook: https://SEU-DOMINIO/webhook    │');
-  console.log('└─────────────────────────────────────────┘');
+  console.log(`\n🚀 Z-API Chat rodando em http://0.0.0.0:${PORT}`);
+  console.log(`   Webhook: POST https://SEU-DOMINIO/webhook\n`);
 });
