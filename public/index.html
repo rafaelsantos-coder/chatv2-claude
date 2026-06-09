@@ -922,23 +922,28 @@ function isLid(p) {
 
 // Resolve o melhor identificador disponível no payload para usar como chave de chat
 function resolvePhone(payload) {
-  // Prioridade: phone (se for número real) > connectedPhone não, é o nosso > qualquer coisa
   const raw = payload.phone || '';
   const digits = phone(raw);
-
-  // Se o phone do payload parece ser um número real, usa ele
-  if (!isLid(raw) && digits.length >= 10 && digits.length <= 13) {
-    return digits;
-  }
-
-  // Caso contrário, tenta o participantPhone (em grupos ou mensagens com LID)
+  if (!isLid(raw) && digits.length >= 10 && digits.length <= 13) return digits;
   if (payload.participantPhone) {
     const pp = phone(payload.participantPhone);
     if (!isLid(payload.participantPhone) && pp.length >= 10 && pp.length <= 13) return pp;
   }
-
-  // Última opção: usa o que veio (pode ser LID, mas pelo menos é consistente)
   return digits;
+}
+
+// Retorna true se o payload contém algum tipo de conteúdo de mensagem
+function hasMessageContent(p) {
+  return !!(p.text || p.image || p.video || p.audio || p.document ||
+            p.sticker || p.location || p.contact || p.reaction);
+}
+
+// Encontra chave de chat existente pelo nome do contato (preferindo chave não-LID)
+function findChatByName(name) {
+  if (!name) return null;
+  const keys = Object.keys(chats).filter(k => chats[k].name === name);
+  if (!keys.length) return null;
+  return keys.find(k => !isLid(k)) || keys[0];
 }
 
 function ensureChat(ph, meta = {}) {
@@ -1378,20 +1383,14 @@ async function poll() {
       if (clientSeen.has(rcvId)) continue;
       clientSeen.add(rcvId);
 
-      // Se ainda é um LID, tenta encontrar um chat existente que tenha o mesmo nome
-      // (caso o usuário já tenha aberto a conversa com o número real)
-      if (isLid(p.phone) && p.senderName) {
-        const matchingChat = Object.keys(chats).find(existingPh => {
-          return chats[existingPh].name === p.senderName ||
-                 chats[existingPh].name === p.chatName;
-        });
-        if (matchingChat) ph = matchingChat;
-      }
+      // Ignora callbacks sem conteúdo (protocolo, sistema, ephemeral, etc.)
+      if (!hasMessageContent(p)) continue;
 
-      // Se o chat ativo tem o mesmo nome, manda pra ele
-      if (isLid(p.phone) && activePhone && chats[activePhone] &&
-          (chats[activePhone].name === p.senderName || chats[activePhone].name === p.chatName)) {
-        ph = activePhone;
+      // Redireciona para chat existente pelo nome — evita duplicatas independente de LID/formato
+      const targetName = p.chatName || p.senderName;
+      if (targetName) {
+        const existing = findChatByName(targetName);
+        if (existing) ph = existing;
       }
 
       const msgObj = buildMsgObject(p, rcvId, ph);
@@ -1408,7 +1407,7 @@ async function poll() {
 
     } // end for
 
-    if (changed) { saveChats(); renderChatList(); updUnreadBadge(); }
+    if (changed) { mergeDuplicateChats(); saveChats(); renderChatList(); updUnreadBadge(); }
 
   } catch (e) { /* silencioso */ }
 }
